@@ -1,17 +1,38 @@
 name: CI
 
+# Build the wheel once, then test that artifact — not the source tree.
+# `workflow_call` lets release.yml reuse this so the artifact that gets
+# published is the artifact that passed tests.
+
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
 
 jobs:
-  check:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v8
+
+      - name: Build
+        run: uv build
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+  lint:
+    # Source-tree checks; these don't apply to the built artifact.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v8
         with:
           enable-cache: true
 
@@ -27,5 +48,29 @@ jobs:
       - name: Types
         run: uv run mypy
 
-      - name: Tests
-        run: uv run pytest
+  test:
+    # Run the suite against the built wheel: locked dev deps, but the
+    # package itself installed from dist/ — this also proves the wheel
+    # bundles data/services.yaml (the contract-pinning tests load it via
+    # importlib.resources).
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v8
+        with:
+          enable-cache: true
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Install dev deps (locked) + the built wheel
+        run: |
+          uv sync --frozen --no-install-project
+          uv pip install dist/*.whl
+
+      - name: Test the artifact
+        run: uv run --no-sync pytest

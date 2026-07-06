@@ -1,6 +1,6 @@
 [project]
 name = "longshore"
-version = "0.1.0"
+version = "0.1.0rc1"
 description = "Contract-driven ECS deploys: render a task definition from SSM, register it, repoint the service, observe the rollout"
 readme = "README.md"
 license = "MIT"
