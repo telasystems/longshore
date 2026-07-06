@@ -6,4 +6,7 @@ observes the rollout. Terraform owns the service; this tool owns only the
 task definition. See docs/deployment-tooling.md in the infrastructure repo.
 """
 
-__version__ = "0.1.0"
+from importlib.metadata import version
+
+# Single source of truth is pyproject.toml; resolved from installed metadata.
+__version__ = version("longshore")
