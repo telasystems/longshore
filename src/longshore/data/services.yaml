@@ -1,0 +1,213 @@
+# ---------------------------------------------------------------------------
+# longshore's SSM interface: /services/{name}/*
+#
+# This file is the versioned definition of the SSM parameters the tool
+# understands, relative to the service prefix. It ships inside the package
+# and is not user-configurable; `longshore validate --service <name>` checks
+# a live prefix for compliance.
+#
+# Every parameter is an SSM String (env params may also be SecureString).
+# `type` is the parse semantic of the value inside the String:
+#   string | int | bool | json    (int/bool are stringified: "256", "true")
+# `default` is what the renderer assumes when the key is absent.
+# `maps_to` uses `container.` as shorthand for containerDefinitions[0]
+# (the primary container).
+#
+# Whatever writes these parameters (Terraform, CloudFormation, a script) is
+# the producer's concern; the tool only requires that the prefix be
+# compliant with this interface.
+# ---------------------------------------------------------------------------
+
+version: 1
+prefix: /services/{name}
+
+# --- deploy coordinates (read by the deploy engine) -------------------------
+
+deploy:
+  - key: ecs/cluster_arn
+    type: string
+    required: true
+    maps_to: UpdateService/RunTask `cluster` argument
+
+  - key: ecs/subnets
+    type: json # list of subnet IDs
+    required: false
+    maps_to: RunTask awsvpcConfiguration.subnets (`run` verb only; `deploy` never touches networking)
+
+  - key: ecs/security_group_ids
+    type: json # list of security group IDs
+    required: false
+    maps_to: RunTask awsvpcConfiguration.securityGroups (`run` verb only)
+
+# --- task definition (read by the renderer) ---------------------------------
+
+task_definition:
+  - key: ecs/execution_role_arn
+    type: string
+    required: true
+    maps_to: executionRoleArn
+
+  - key: ecs/task_role_arn
+    type: string
+    required: true
+    maps_to: taskRoleArn
+
+  - key: ecs/cpu
+    type: int
+    required: false
+    default: 256
+    maps_to: cpu (task level; passed through as a string per ECS API)
+
+  - key: ecs/memory
+    type: int
+    required: false
+    default: 512
+    maps_to: memory (task level; passed through as a string per ECS API)
+
+  - key: ecs/cpu_architecture
+    type: string
+    enum: [ARM64, X86_64]
+    required: false
+    default: ARM64
+    maps_to: runtimePlatform.cpuArchitecture
+
+  - key: ecs/ephemeral_storage
+    type: int # GiB, 21-200
+    required: false
+    maps_to: ephemeralStorage.sizeInGiB
+    notes: Absent means the Fargate default of 20 GiB.
+
+  - key: ecs/container_name
+    type: string
+    required: false
+    default: main
+    maps_to: >
+      container.name, awslogs-stream-prefix, the primary's env discovery path
+      (containers/{container_name}/env), and (with Service Connect)
+      portMappings[0].name
+
+  - key: ecs/container_port
+    type: int
+    required: false
+    maps_to: >
+      container.portMappings[0].containerPort (protocol tcp); portMappings
+      omitted entirely when absent
+
+  - key: ecs/log_group_name
+    type: string
+    required: true
+    maps_to: >
+      container.logConfiguration.options.awslogs-group (logDriver awslogs;
+      awslogs-region from the tool's resolved region)
+    notes: >
+      Only feeds the DEFAULT logConfiguration; ignored by the renderer when
+      ecs/log_configuration is present. Stays required regardless, which
+      keeps the default path total.
+
+  - key: ecs/log_configuration
+    type: json # raw ECS logConfiguration: {logDriver, options, secretOptions}
+    required: false
+    maps_to: >
+      container.logConfiguration (replaces the default awslogs block
+      verbatim; the renderer injects nothing, not even awslogs-region)
+    notes: >
+      Generic log-driver override; with logDriver=awsfirelens plus a
+      log-router sidecar carrying firelensConfiguration this enables
+      FireLens. secretOptions valueFrom ARNs must be readable by the
+      execution role — put log-destination secrets under the log router's
+      own env subtree so they are not injected into the app container.
+
+  - key: ecs/stop_timeout
+    type: int # seconds, max 120 on Fargate
+    required: false
+    default: 30
+    maps_to: container.stopTimeout
+
+  - key: ecs/init_process
+    type: bool
+    required: false
+    default: true
+    maps_to: container.linuxParameters.initProcessEnabled
+
+  - key: ecs/command
+    type: json # list of strings
+    required: false
+    maps_to: container.command (passthrough)
+
+  - key: ecs/ulimits
+    type: json # list of {name, softLimit, hardLimit}
+    required: false
+    maps_to: container.ulimits (passthrough; keys are already camelCase)
+
+  - key: ecs/health_check
+    type: json # {command: [string], interval, timeout, retries, start_period}
+    required: false
+    maps_to: container.healthCheck
+    notes: >
+      Keys are snake_case as written; the renderer transforms
+      start_period -> startPeriod, and command -> ["CMD-SHELL", " ".join(command)].
+      Defaults (interval 30, timeout 5, retries 3, start_period 60) are
+      applied by the renderer when absent from the JSON.
+
+  - key: ecs/sidecars
+    type: json # list of raw ECS container definitions (camelCase)
+    required: false
+    maps_to: containerDefinitions[1..] — appended verbatim after the primary container
+    notes: >
+      Sidecar images are pinned by the producer (log routers, agents,
+      proxies); the tool's --image only ever targets the primary
+      container. essential, dependsOn, logConfiguration etc. are the
+      author's responsibility in the raw definition; sidecar names must be
+      unique and differ from container_name. For FireLens, give the sidecar
+      a firelensConfiguration and set ecs/log_configuration to route the
+      primary container's logs through it.
+
+  - key: ecs/service_connect_namespace_arn
+    type: string
+    required: false
+    maps_to: >
+      presence trigger only — adds `name` (= container_name) and
+      `appProtocol` to portMappings[0]
+    notes: >
+      The ARN value itself is not placed in the task definition; the ECS
+      service's Service Connect configuration (producer-owned) uses it.
+
+  - key: ecs/service_connect_app_protocol
+    type: string
+    enum: [http, http2, grpc]
+    required: false
+    default: http
+    maps_to: >
+      container.portMappings[0].appProtocol (only when
+      service_connect_namespace_arn is present)
+
+# --- environment / secrets, per container -----------------------------------
+
+env:
+  path: containers/{container}/env/{VAR}
+  ssm_type: String or SecureString
+  maps_to: >
+    that container's secrets[] as {name: "{VAR}", valueFrom: <parameter ARN>}
+  notes: >
+    One env mechanism for every container. The renderer discovers
+    {prefix}/containers/{container}/env non-recursively for the primary
+    (name from ecs/container_name) and for each declared sidecar, sorted by
+    name, appended to any `secrets` already present in a raw sidecar
+    definition. Values are never read by the tool (WithDecryption
+    false), only ARNs — ECS resolves them at task start via the execution
+    role. The containers/ subtree is EXCLUDED from the config read, so no
+    container can see another's env.
+
+# ---------------------------------------------------------------------------
+# Fixed task-definition fields — set by the renderer, not read from SSM.
+# ---------------------------------------------------------------------------
+
+fixed_fields:
+  family: "{name} (the --service argument)"
+  requiresCompatibilities: [FARGATE]
+  networkMode: awsvpc
+  runtimePlatform.operatingSystemFamily: LINUX
+  container.essential: true
+  container.image: the --image argument
+  container.logConfiguration.logDriver: awslogs (default only — replaced wholesale by ecs/log_configuration when present)
+  container.logConfiguration.options.awslogs-region: the tool's resolved AWS region (default logConfiguration only)
