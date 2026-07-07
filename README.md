@@ -88,7 +88,8 @@ Interface changes bump the contract `version` and ship as new releases.
 ## GitHub Action
 
 The repo doubles as a composite action pinned to the same version as the
-code:
+code. Pin it by a release's full commit SHA (release tags are immutable,
+but a SHA pin is verifiable and Dependabot keeps it current):
 
 ```yaml
 jobs:
@@ -98,12 +99,17 @@ jobs:
       id-token: write   # OIDC
       contents: read
     steps:
-      - uses: telasystems/longshore@v0
+      - uses: telasystems/longshore@912e504669e94336612a28e50870d032badc075e # v0.1.0
         with:
           service-name: myapp-production
           image: ${{ needs.build.outputs.image }}
           role-arn: ${{ vars.DEPLOY_ROLE_ARN }}
+          aws-region: us-east-2
 ```
+
+Each release's SHA is listed on the [releases
+page](https://github.com/telasystems/longshore/releases); no floating
+`v0`/`v1` tag is maintained.
 
 ## IAM for the deploy path
 

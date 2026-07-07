@@ -36,7 +36,7 @@ runs:
     - name: Deploy
       shell: bash
       # Runs the version of longshore checked out at the action's own ref,
-      # so `uses: telasystems/longshore@vX` pins code and action together.
+      # so `uses: telasystems/longshore@<sha>` pins code and action together.
       run: |
         uv run --frozen --project "${{ github.action_path }}" \
           longshore deploy \

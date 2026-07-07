@@ -41,8 +41,8 @@ Practical consequence: **you cannot add a task-definition key to `services.yaml`
 ## Distribution
 
 Two artifacts ship from this one repo, pinned to the same version:
-- The **PyPI package** (`uvx longshore ...`). Released tag-driven: `git tag vX.Y.Z && git push --tags` → `release.yml` checks the tag matches `pyproject.toml`'s `version`, builds, publishes via PyPI trusted publishing (OIDC, no tokens), creates the GitHub release, and moves the floating major tag (`v0`/`v1`).
-- The **composite GitHub Action** (`action.yml`) — configures AWS creds via OIDC then runs `longshore deploy` from the checked-out action ref, so `uses: telasystems/longshore@vX` pins code and action together.
+- The **PyPI package** (`uvx longshore ...`). Released tag-driven: `git tag vX.Y.Z && git push --tags` → `release.yml` checks the tag matches `pyproject.toml`'s `version`, builds, publishes via PyPI trusted publishing (OIDC, no tokens), and creates the GitHub release. No floating major tag (`v0`/`v1`) is maintained — release tags are immutable (repo ruleset) and action consumers pin a release's commit SHA.
+- The **composite GitHub Action** (`action.yml`) — configures AWS creds via OIDC then runs `longshore deploy` from the checked-out action ref, so `uses: telasystems/longshore@<sha>` pins code and action together.
 
 When bumping the version, update `pyproject.toml`'s `version` before tagging (the release workflow enforces they match).
 

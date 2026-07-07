@@ -2,8 +2,9 @@ name: Release
 
 # Tag-driven: `git tag vX.Y.Z && git push --tags` verifies the tag, runs the
 # CI workflow (build the wheel → test that artifact), publishes the SAME
-# artifact to PyPI via trusted publishing (no tokens), creates the GitHub
-# release, and moves the floating major tag (v0/v1) that action consumers pin.
+# artifact to PyPI via trusted publishing (no tokens), and creates the
+# GitHub release. No floating major tag (v0/v1) is maintained: release tags
+# are immutable and action consumers pin a release's commit SHA.
 #
 # One-time setup on PyPI: add a "trusted publisher" for the `longshore`
 # project pointing at this repo + this workflow file + environment `pypi`.
@@ -68,15 +69,3 @@ jobs:
           gh release create "$GITHUB_REF_NAME" dist/* "${args[@]}"
         env:
           GH_TOKEN: ${{ github.token }}
-
-      - name: Move the floating major tag
-        # Only stable releases move v0/v1 — action consumers pin those, and
-        # a pre-release must never be served to `uses: …@v0`.
-        run: |
-          if [[ "$GITHUB_REF_NAME" =~ (a|b|rc|dev)[0-9]+$ ]]; then
-            echo "pre-release tag; not moving the major tag"
-            exit 0
-          fi
-          major="${GITHUB_REF_NAME%%.*}"
-          git tag -f "$major" "$GITHUB_REF_NAME"
-          git push -f origin "$major"
