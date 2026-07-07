@@ -1,0 +1,65 @@
+name: Action smoke
+
+# Proves the composite action end-to-end without a real AWS account: a
+# moto server stands in for AWS (boto3 and the AWS JS SDK both honor
+# AWS_ENDPOINT_URL), a seed script plays the producer (SSM prefix + ECS
+# cluster/service), then `uses: ./` runs the real action — OIDC credential
+# exchange included — and the repoint is verified.
+#
+# Limits: moto does not model rollout deployments (update_service never
+# creates a new PRIMARY deployment), so the action runs with
+# wait-minutes 0; watch_rollout is covered by unit tests. IAM trust is not
+# exercised — only a real-AWS E2E can prove that.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  id-token: write # OIDC token; exchanged against moto's STS
+  contents: read
+
+jobs:
+  smoke:
+    # Fork PRs cannot mint OIDC tokens; skip rather than fail.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      AWS_ENDPOINT_URL: http://127.0.0.1:5000
+      AWS_ACCESS_KEY_ID: testing
+      AWS_SECRET_ACCESS_KEY: testing
+      AWS_DEFAULT_REGION: us-east-2
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1 # v8.3.1
+
+      - name: Start moto server (stand-in AWS)
+        run: |
+          uvx --from 'moto[server]' moto_server -p 5000 &
+          timeout 30 bash -c 'until curl -sf http://127.0.0.1:5000/moto-api/data.json >/dev/null; do sleep 0.5; done'
+
+      - name: Seed producer state (SSM prefix + ECS cluster/service)
+        run: uv run --frozen python .github/scripts/seed_action_smoke.py
+
+      - name: Validate the seeded prefix
+        run: uv run --frozen longshore validate --service smoke
+
+      - name: Deploy via the action
+        uses: ./
+        with:
+          service-name: smoke
+          image: example.com/smoke:one
+          role-arn: arn:aws:iam::123456789012:role/smoke-deploy
+          aws-region: us-east-2
+          wait-minutes: "0"
+
+      - name: Verify the service was repointed
+        run: |
+          arn=$(uv run --frozen python -c "import boto3; print(boto3.client('ecs').describe_services(cluster='smoke-cluster', services=['smoke'])['services'][0]['taskDefinition'])")
+          echo "service task definition: $arn"
+          [[ "$arn" == *":task-definition/smoke:2" ]]
+          uv run --frozen longshore diff --service smoke | tee /tmp/diff.out
+          grep -q "no changes" /tmp/diff.out
