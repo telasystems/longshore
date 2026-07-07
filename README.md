@@ -33,7 +33,7 @@ uvx longshore==0.1.0 --help   # pinned (recommended in CI)
 ## Usage
 
 ```bash
-# The main path (CI and local; identical behaviour)
+# The main path (CI and local; identical behavior)
 longshore deploy --service myapp-production --image <ecr-url>:<tag> [--region us-east-2] [--wait-minutes 12]
 
 # Config gates (read-only against AWS)
@@ -126,7 +126,7 @@ uv run mypy                  # types
 ```
 
 The contract-pinning tests walk the bundled contract and assert the renderer
-honours every entry (type, default, required, enum) — a contract change fails
+honors every entry (type, default, required, enum) — a contract change fails
 tests until the renderer handles it, so spec and code cannot drift silently.
 
 ## License
