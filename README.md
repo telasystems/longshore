@@ -99,7 +99,7 @@ jobs:
       id-token: write   # OIDC
       contents: read
     steps:
-      - uses: telasystems/longshore@912e504669e94336612a28e50870d032badc075e # v0.1.0
+      - uses: telasystems/longshore@8f449c3d48e75fce7f2214e6947c8b21e8e154e8 # v0.1.1
         with:
           service-name: myapp-production
           image: ${{ needs.build.outputs.image }}
