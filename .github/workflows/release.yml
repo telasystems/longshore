@@ -69,3 +69,44 @@ jobs:
           gh release create "$GITHUB_REF_NAME" dist/* "${args[@]}"
         env:
           GH_TOKEN: ${{ github.token }}
+
+  update-readme:
+    # A commit cannot contain its own SHA, so the README example can never
+    # pin the release it ships in. Instead: after a stable release, open a
+    # PR repointing main's README at the fresh release SHA (a PR rather
+    # than a direct push so this survives any branch protection on main;
+    # merging it is a human step). The PyPI page (rendered from the tagged
+    # snapshot) shows the previous release's pin, which stays valid because
+    # release tags are immutable.
+    needs: github-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: main
+
+      - name: PR the README action example to this release
+        run: |
+          if [[ "$GITHUB_REF_NAME" =~ (a|b|rc|dev)[0-9]+$ ]]; then
+            echo "pre-release; leaving the README example alone"
+            exit 0
+          fi
+          sed -i -E "s|(uses: telasystems/longshore@)[0-9a-f]{40} # v[^ ]+|\1${GITHUB_SHA} # ${GITHUB_REF_NAME}|" README.md
+          if git diff --quiet; then
+            echo "README already points at ${GITHUB_SHA}"
+            exit 0
+          fi
+          branch="docs/readme-${GITHUB_REF_NAME}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git commit -am "docs: pin README action example to ${GITHUB_REF_NAME}"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "docs: pin README action example to ${GITHUB_REF_NAME}" \
+            --body "Automated post-release update: the action example now pins ${GITHUB_REF_NAME} (${GITHUB_SHA})."
+        env:
+          GH_TOKEN: ${{ github.token }}
