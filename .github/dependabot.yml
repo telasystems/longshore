@@ -1,0 +1,22 @@
+# Weekly dependency PRs, grouped so each ecosystem lands as one PR.
+version: 2
+updates:
+  # Workflow files AND the root action.yml (composite action) — the
+  # github-actions ecosystem scans both for `directory: "/"`.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # pyproject.toml + uv.lock (boto3 releases near-daily; grouping keeps
+  # this to one PR a week).
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      python:
+        patterns: ["*"]
